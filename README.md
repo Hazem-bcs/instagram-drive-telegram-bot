@@ -103,7 +103,7 @@ npx wrangler secret put GITHUB_TOKEN
 ```
 
 - `TELEGRAM_ALLOWED_USER_ID`: معرفك الرقمي من الخطوة 2.
-- `GITHUB_TOKEN`: GitHub **fine-grained PAT** محدود فقط لهذا المستودع مع صلاحية **Actions: Read and write**، لإنشاء `workflow_dispatch` عبر API. أنشئه من GitHub → Settings → Developer settings → Personal access tokens → Fine-grained tokens. سيحتاج تجديداً إذا انتهت صلاحيته.
+- `GITHUB_TOKEN`: أنشئ GitHub **fine-grained PAT** محدوداً إلى مستودع `Hazem-bcs/instagram-drive-telegram-bot` فقط بصلاحية **Actions: Read and write** من https://github.com/settings/personal-access-tokens/new. ثم نفّذ `python3 scripts/install_github_token.py` محلياً على ROG للصق التوكن بإدخال مخفي وتثبيته في Cloudflare. لا تلصق التوكن في المحادثة أو سطر الأوامر. سيحتاج تجديداً إذا انتهت صلاحيته.
 - `PIPELINE_KEY`: 32-byte base64url من `scripts/create_keys.py`، نفسه لدى GitHub Actions.
 - `TELEGRAM_WEBHOOK_SECRET`: القيمة الأخرى الناتجة من نفس البرنامج.
 
