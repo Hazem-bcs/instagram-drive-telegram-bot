@@ -1,0 +1,9 @@
+name = "instagram-drive-telegram-bot"
+main = "worker/src/index.js"
+compatibility_date = "2026-11-01"
+workers_dev = true
+
+[vars]
+GITHUB_OWNER = "Hazem-bcs"
+GITHUB_REPO = "instagram-drive-telegram-bot"
+# All credentials belong in Cloudflare Worker Secrets, never here.
