@@ -130,8 +130,10 @@ def get_first_video_info(info: dict) -> dict:
 
 def download_video(url: str, directory: str) -> tuple[Path, str]:
     import yt_dlp
+    from imageio_ffmpeg import get_ffmpeg_exe
 
     options = {
+        "ffmpeg_location": get_ffmpeg_exe(),
         "outtmpl": str(Path(directory) / "instagram_%(id)s.%(ext)s"),
         "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
         "merge_output_format": "mp4",
