@@ -12,6 +12,7 @@ import sys
 import time
 from pathlib import Path
 from urllib.error import HTTPError, URLError
+from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
 
 BOT_NAME = "hazemdownloaderbot"
@@ -62,12 +63,27 @@ def main():
     if me.get("username", "").lower() != BOT_NAME:
         raise RuntimeError(f"This token does not belong to @{BOT_NAME}.")
     print("Verified bot. Registering webhook...")
-    telegram(token, "setWebhook", {
+    options = {
         "url": WORKER_URL,
         "secret_token": secret,
         "allowed_updates": ["message"],
         "drop_pending_updates": True,
-    })
+    }
+    try:
+        telegram(token, "setWebhook", options)
+    except RuntimeError as exc:
+        reason = str(exc).lower()
+        if not any(term in reason for term in ("resolve host", "name resolution", "getaddrinfo")):
+            raise
+        # Telegram's official ip_address parameter bypasses its webhook DNS
+        # lookup while retaining WORKER_URL for the HTTPS hostname and SNI.
+        hostname = urlsplit(WORKER_URL).hostname
+        addresses = socket.getaddrinfo(hostname, 443, family=socket.AF_INET, type=socket.SOCK_STREAM)
+        if not addresses:
+            raise RuntimeError("No IPv4 address available for the Cloudflare Worker.") from None
+        ip = addresses[0][4][0]
+        print(f"Telegram webhook DNS lookup failed; retrying with resolved IPv4 {ip}.")
+        telegram(token, "setWebhook", {**options, "ip_address": ip})
     info = telegram(token, "getWebhookInfo")
     if info.get("url") != WORKER_URL:
         raise RuntimeError("Telegram did not retain the expected webhook URL.")

@@ -34,7 +34,7 @@ cd /home/hazem/projects/instagram-drive-telegram-bot
 python3 scripts/finish_webhook.py
 ```
 
-بعد نجاحه أرسل `/start` إلى البوت للتحقق من الرد. يستلزم تنزيل الفيديو الفعلي إعداد `GITHUB_TOKEN` و`GOOGLE_OAUTH_JSON`.
+إذا رد Telegram بـ`bad webhook: Failed to resolve host`، يعيد هذا السكربت التسجيل باستخدام عنوان IPv4 الذي يحلّه الجهاز لخدمة Cloudflare مع خيار Telegram الرسمي `ip_address`، دون تغيير رابط HTTPS. بعد نجاحه أرسل `/start` إلى البوت للتحقق من الرد. يستلزم تنزيل الفيديو الفعلي إعداد `GITHUB_TOKEN` و`GOOGLE_OAUTH_JSON`.
 
 **لإعداد بوت مختلف بدلاً من البوت الحالي:**
 
