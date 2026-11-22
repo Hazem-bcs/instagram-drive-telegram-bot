@@ -27,6 +27,15 @@ python3 scripts/activate_telegram.py
 
 سيطلب البرنامج توكن BotFather بطريقة مخفية، ويعرض معرف تيليغرام الرقمي لتأكيده، ويضع التوكن في Cloudflare/GitHub Secrets ثم يسجل Webhook. لا ينسخ التوكن إلى GitHub العام. يلزم إعداد `GITHUB_TOKEN` و`GOOGLE_OAUTH_JSON` أدناه لتمكين تنزيل الفيديو.
 
+**إذا أكمل `activate_telegram.py` ضبط الأسرار ثم فشل عند `setWebhook`، لا تكرر الإعداد كله.** استخدم البرنامج التالي؛ سيطلب توكن BotFather محلياً بشكل مخفي، يعيد محاولة الاتصال، ثم يتأكد من تسجيل عنوان الـWebhook:
+
+```bash
+cd /home/hazem/projects/instagram-drive-telegram-bot
+python3 scripts/finish_webhook.py
+```
+
+بعد نجاحه أرسل `/start` إلى البوت للتحقق من الرد. يستلزم تنزيل الفيديو الفعلي إعداد `GITHUB_TOKEN` و`GOOGLE_OAUTH_JSON`.
+
 **لإعداد بوت مختلف بدلاً من البوت الحالي:**
 
 - افتح https://t.me/BotFather وأرسل `/newbot`، واحتفظ بالتوكن سراً.
