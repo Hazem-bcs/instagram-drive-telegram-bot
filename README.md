@@ -54,16 +54,16 @@ python3 scripts/finish_webhook.py
 
 1. افتح https://console.cloud.google.com/ وأنشئ مشروعاً، وفعّل **Google Drive API**.
 2. في **Google Auth Platform / OAuth consent screen** اختر إعداد التطبيق للاستخدام الشخصي. استخدم نطاق `https://www.googleapis.com/auth/drive.file` فقط؛ وهو وصول محدود للملفات التي ينشئها التطبيق أو يفتحها بموافقتك.
-3. أنشئ **OAuth Client ID** من نوع **Desktop app**. نزّل JSON إلى جذر المستودع المحلي باسم `client_secret.json` (موجود في `.gitignore`).
+3. أنشئ **OAuth Client ID** من نوع **Desktop app**. نزّل JSON إلى مجلد `~/Downloads` على جهاز ROG؛ سيتعرّف البرنامج تلقائياً إلى ملف `client_secret*.json`، أو يمكنك وضعه باسم `client_secret.json` في جذر المستودع. كلا الملفين ممنوعان من Git.
 4. إذا بقي التطبيق في وضع *Testing* مع مستخدمين خارجيين، قد تنتهي صلاحية refresh token بعد 7 أيام؛ لتشغيل دائم انشر التطبيق بوضع *Production* عندما تسمح إعدادات Google بذلك.
-5. على جهازك الشخصي نفّذ:
+5. على جهاز ROG (البيئة المحلية `.venv` أُنشئت للمشروع) نفّذ:
 
    ```bash
-   python -m pip install -r requirements.txt
-   python scripts/google_auth.py
+   cd ~/projects/instagram-drive-telegram-bot
+   .venv/bin/python scripts/google_auth.py
    ```
 
-6. سيُفتح متصفح Google لتوافق بنفسك. بعدها يتولد `.secrets/google_oauth.json` محلياً؛ لا ترفعه ولا ترسله لأحد. انسخ محتواه كاملاً إلى GitHub Actions secret باسم `GOOGLE_OAUTH_JSON` (Settings → Secrets and variables → Actions → New repository secret).
+6. سيُفتح متصفح Google لتوافق بنفسك. بعدها يتولد `.secrets/google_oauth.json` محلياً بصلاحيات خاصة، ويضع البرنامج قيمته تلقائياً في GitHub Actions secret باسم `GOOGLE_OAUTH_JSON` دون لصقه أو عرضه على الشاشة. لا ترسل ملفات التفويض لأحد.
 
 سيُنشئ البوت مجلد `Instagram Videos` في **My Drive** تلقائياً عند أول عملية. سيمنح المجلد وملفات الفيديو صلاحية `anyone: reader` لمشاركة الروابط.
 
