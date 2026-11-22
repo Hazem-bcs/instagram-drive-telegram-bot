@@ -16,6 +16,19 @@
 
 ## 2. إنشاء بوت Telegram
 
+**بوت هذا المشروع:** [@hazemdownloaderbot](https://t.me/hazemdownloaderbot).
+
+على جهاز ROG تم نشر Cloudflare Worker وتجهيز مفتاح التشفير. لإكمال تفعيل البوت دون لصق التوكن في المحادثة أو سطر الأوامر، أرسل `/start` إلى البوت، ثم شغّل هذا الأمر من Terminal على ROG:
+
+```bash
+cd /home/hazem/projects/instagram-drive-telegram-bot
+python3 scripts/activate_telegram.py
+```
+
+سيطلب البرنامج توكن BotFather بطريقة مخفية، ويعرض معرف تيليغرام الرقمي لتأكيده، ويضع التوكن في Cloudflare/GitHub Secrets ثم يسجل Webhook. لا ينسخ التوكن إلى GitHub العام. يلزم إعداد `GITHUB_TOKEN` و`GOOGLE_OAUTH_JSON` أدناه لتمكين تنزيل الفيديو.
+
+**لإعداد بوت مختلف بدلاً من البوت الحالي:**
+
 - افتح https://t.me/BotFather وأرسل `/newbot`، واحتفظ بالتوكن سراً.
 - افتح محادثة البوت الجديد وأرسل `/start`.
 - لتحديد معرفك الرقمي (قبل تسجيل webhook) نفّذ محلياً:
