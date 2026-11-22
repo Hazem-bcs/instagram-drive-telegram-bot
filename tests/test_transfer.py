@@ -4,9 +4,10 @@ import os
 import sys
 import unittest
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
-from transfer import decode_job, validate_instagram_url
+from transfer import decode_job, validate_instagram_url, ensure_folder, search_existing
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 
@@ -37,6 +38,28 @@ class JobTests(unittest.TestCase):
         encrypted = AESGCM(key).encrypt(iv, b'{}', None)
         with self.assertRaises(Exception):
             decode_job(to_b64(iv) + '.' + to_b64(encrypted[:-1] + b'X'), to_b64(key))
+
+
+class DriveApiCallTests(unittest.TestCase):
+    def test_folder_list_uses_google_api_page_size_spelling(self):
+        service = MagicMock()
+        service.files.return_value.list.return_value.execute.return_value = {
+            "files": [{"id": "folder-id", "name": "Instagram Videos"}],
+        }
+        with patch("transfer.ensure_public"):
+            folder = ensure_folder(service)
+        self.assertEqual(folder["id"], "folder-id")
+        kwargs = service.files.return_value.list.call_args.kwargs
+        self.assertEqual(kwargs["pageSize"], 10)
+        self.assertNotIn("page_size", kwargs)
+
+    def test_existing_file_search_uses_google_api_page_size_spelling(self):
+        service = MagicMock()
+        service.files.return_value.list.return_value.execute.return_value = {"files": []}
+        self.assertIsNone(search_existing(service, "folder-id", "test.mp4"))
+        kwargs = service.files.return_value.list.call_args.kwargs
+        self.assertEqual(kwargs["pageSize"], 10)
+        self.assertNotIn("page_size", kwargs)
 
 
 if __name__ == '__main__':

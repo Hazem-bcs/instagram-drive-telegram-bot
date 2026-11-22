@@ -81,7 +81,7 @@ def search_existing(service, parent_id: str, filename: str) -> dict | None:
     safe_name = filename.replace("\\", "\\\\").replace("'", "\\'")
     items = service.files().list(
         q=f"'{parent_id}' in parents and name = '{safe_name}' and trashed = false",
-        fields="files(id,name,webViewLink),nextPageToken", page_size=10,
+        fields="files(id,name,webViewLink),nextPageToken", pageSize=10,
     ).execute().get("files", [])
     return items[0] if items else None
 
@@ -97,7 +97,7 @@ def ensure_folder(service, name: str = "Instagram Videos") -> dict:
     safe = name.replace("\\", "\\\\").replace("'", "\\'")
     results = service.files().list(
         q=f"name = '{safe}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false",
-        fields="files(id,name,webViewLink),nextPageToken", page_size=10,
+        fields="files(id,name,webViewLink),nextPageToken", pageSize=10,
     ).execute().get("files", [])
     if results:
         folder = results[0]
