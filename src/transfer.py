@@ -1,4 +1,4 @@
-"""Secure ephemeral transfer: encrypted GitHub input -> Instagram -> Google Drive -> Telegram.
+"""Secure ephemeral transfer: encrypted GitHub input -> video site -> Google Drive -> Telegram.
 
 Expected environment: ENCRYPTED_PAYLOAD, PIPELINE_KEY, GOOGLE_OAUTH_JSON,
 TELEGRAM_BOT_TOKEN.  The workflow never prints URLs or credentials.
@@ -17,6 +17,7 @@ from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from media_urls import parse_video_url
 
 DRIVE_SCOPES = ["https://www.googleapis.com/auth/drive.file"]
 MAX_FILE_BYTES = 250 * 1024 * 1024
@@ -35,7 +36,7 @@ def decode_job(ciphertext: str, encoded_key: str) -> dict:
     job = json.loads(data)
     if not isinstance(job, dict):
         raise ValueError("Job must be a JSON object")
-    job_url = validate_instagram_url(job.get("url", ""))
+    job_url, _ = parse_video_url(job.get("url", ""))
     chat_id = str(job.get("chat_id", ""))
     if not re.fullmatch(r"\d{3,20}", chat_id):
         raise ValueError("Invalid Telegram chat ID")
@@ -43,17 +44,15 @@ def decode_job(ciphertext: str, encoded_key: str) -> dict:
 
 
 def validate_instagram_url(raw: str) -> str:
-    if not isinstance(raw, str) or len(raw) > 2048:
-        raise ValueError("Invalid Instagram URL")
-    parsed = urlsplit(raw)
-    if parsed.scheme != "https" or parsed.hostname not in ("instagram.com", "www.instagram.com", "m.instagram.com"):
-        raise ValueError("URL must use Instagram HTTPS")
-    if parsed.username or parsed.password or parsed.port:
-        raise ValueError("Unexpected URL components")
-    match = re.fullmatch(r"/(reel|reels|p|tv)/([A-Za-z0-9_-]+)/?", parsed.path, flags=re.I)
-    if not match:
-        raise ValueError("Unsupported Instagram video URL")
-    return f"https://www.instagram.com/{match.group(1).lower()}/{match.group(2)}/"
+    """Backward-compatible Instagram-only parser for existing integrations."""
+    url, platform = parse_video_url(raw)
+    if platform != "Instagram":
+        raise ValueError("This helper only accepts Instagram")
+    return url
+
+def validate_video_url(raw: str) -> str:
+    """Validate one approved video URL from the encrypted workflow payload."""
+    return parse_video_url(raw)[0]
 
 
 def telegram_message(bot_token: str, chat_id: str, text: str) -> None:
@@ -134,7 +133,7 @@ def download_video(url: str, directory: str) -> tuple[Path, str]:
 
     options = {
         "ffmpeg_location": get_ffmpeg_exe(),
-        "outtmpl": str(Path(directory) / "instagram_%(id)s.%(ext)s"),
+        "outtmpl": str(Path(directory) / "video_%(id)s.%(ext)s"),
         "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
         "merge_output_format": "mp4",
         "noplaylist": True,
@@ -152,7 +151,7 @@ def download_video(url: str, directory: str) -> tuple[Path, str]:
     with yt_dlp.YoutubeDL(options) as ydl:
         info = ydl.extract_info(url, download=True)
     if not info:
-        raise ValueError("Unable to download Instagram video")
+        raise ValueError("Unable to download video from supported platform")
     entry = get_first_video_info(info)
     video_id = str(entry.get("id") or "unknown")
     video_id = re.sub(r"[^A-Za-z0-9_-]", "", video_id)[:100] or "unknown"
@@ -184,17 +183,18 @@ def main() -> int:
         job = decode_job(os.environ["ENCRYPTED_PAYLOAD"], os.environ["PIPELINE_KEY"])
         chat_id = job["chat_id"]
         bot_token = os.environ["TELEGRAM_BOT_TOKEN"]
+        _, platform = parse_video_url(job["url"])
         service = drive_service()
         folder = ensure_folder(service, os.getenv("DRIVE_FOLDER_NAME", "Instagram Videos"))
         with tempfile.TemporaryDirectory() as directory:
             path, video_id = download_video(job["url"], directory)
-            filename = f"Instagram_{video_id}{path.suffix.lower()}"
+            filename = f"{platform}_{video_id}{path.suffix.lower()}"
             found = search_existing(service, folder["id"], filename)
             result = found if found else upload_video(service, path, filename, folder["id"])
             ensure_public(service, result["id"])
         file_link = f"https://drive.google.com/file/d/{result['id']}/view"
         folder_link = f"https://drive.google.com/drive/folders/{folder['id']}"
-        telegram_message(bot_token, chat_id, f"✅ تم حفظ الفيديو في Google Drive.\n🎬 {file_link}\n📁 المجلد: {folder_link}")
+        telegram_message(bot_token, chat_id, f"✅ تم حفظ فيديو {platform} في Google Drive.\n🎬 {file_link}\n📁 المجلد: {folder_link}\n💬 يمكنك إرسال الرابط إلى ChatGPT لمناقشة محتواه.")
         print("Transfer completed successfully (sensitive URLs omitted).")
         return 0
     except Exception as exc:
@@ -203,7 +203,7 @@ def main() -> int:
         if chat_id and os.getenv("TELEGRAM_BOT_TOKEN"):
             try:
                 telegram_message(os.environ["TELEGRAM_BOT_TOKEN"], chat_id,
-                                 "❌ تعذّر تنزيل الفيديو أو رفعه. قد يكون الرابط خاصاً أو يمنع Instagram التنزيل، أو توجد مشكلة في إعداد Google Drive.")
+                                 "❌ تعذّر تنزيل الفيديو أو رفعه. قد يكون الرابط خاصاً، أو لا تدعم المنصة التنزيل من خوادم GitHub، أو الفيديو كبيراً، أو توجد مشكلة في Google Drive.")
             except Exception:
                 print("Could not deliver error notification.", file=sys.stderr)
         return 1

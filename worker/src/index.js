@@ -1,30 +1,136 @@
 /** Telegram webhook -> encrypted GitHub workflow_dispatch. Runs on Cloudflare Workers. */
 const TELEGRAM_API = "https://api.telegram.org";
+const URL_RE = /https?:\/\/[^\s<>"']+/i;
+const VALID_ID = /^[A-Za-z0-9_-]+$/;
+const ALLOWED_HOSTS = Object.freeze({
+  Instagram: ["instagram.com", "www.instagram.com", "m.instagram.com"],
+  YouTube: ["youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com", "youtu.be"],
+  Facebook: ["facebook.com", "www.facebook.com", "m.facebook.com", "mbasic.facebook.com", "fb.watch"],
+  TikTok: ["tiktok.com", "www.tiktok.com", "m.tiktok.com", "vm.tiktok.com", "vt.tiktok.com"],
+  X: ["x.com", "www.x.com", "twitter.com", "www.twitter.com", "mobile.twitter.com"],
+  Reddit: ["reddit.com", "www.reddit.com", "old.reddit.com", "new.reddit.com", "redd.it", "v.redd.it"],
+  Vimeo: ["vimeo.com", "www.vimeo.com", "player.vimeo.com"],
+  Twitch: ["twitch.tv", "www.twitch.tv", "m.twitch.tv", "clips.twitch.tv"],
+  Dailymotion: ["dailymotion.com", "www.dailymotion.com", "dai.ly"],
+  Streamable: ["streamable.com", "www.streamable.com"],
+});
 
 function base64Url(bytes) {
   let binary = "";
   for (const byte of bytes) binary += String.fromCharCode(byte);
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
-
 function decodeBase64Url(s) {
   const normalized = s.replace(/-/g, "+").replace(/_/g, "/");
   const binary = atob(normalized + "=".repeat((4 - (normalized.length % 4)) % 4));
   return Uint8Array.from(binary, c => c.charCodeAt(0));
 }
 
-export function parseInstagramUrl(text) {
+/** Only supported public video URL shapes are permitted. Never follow arbitrary links. */
+export function parseVideoUrl(text) {
   if (typeof text !== "string" || text.length > 3500) return null;
-  const raw = text.match(/https?:\/\/[^\s<>"']+/i)?.[0]?.replace(/[),.!؟،]+$/, "");
+  const raw = text.match(URL_RE)?.[0]?.replace(/[),.!؟،\]}>]+$/, "");
   if (!raw) return null;
-  try {
-    const url = new URL(raw);
-    if (url.protocol !== "https:") return null;
-    if (!["instagram.com", "www.instagram.com", "m.instagram.com"].includes(url.hostname.toLowerCase())) return null;
-    const match = url.pathname.match(/^\/(reel|reels|p|tv)\/([A-Za-z0-9_-]+)\/?$/i);
-    if (!match) return null;
-    return `https://www.instagram.com/${match[1].toLowerCase()}/${match[2]}/`;
-  } catch { return null; }
+  let u;
+  try { u = new URL(raw); } catch { return null; }
+  if (u.protocol !== "https:" || u.username || u.password || u.port || u.hash) return null;
+  const host = u.hostname.toLowerCase();
+  const platform = Object.entries(ALLOWED_HOSTS).find(([, hosts]) => hosts.includes(host))?.[0];
+  if (!platform) return null;
+  const path = u.pathname;
+  let match;
+  let url;
+  switch (platform) {
+    case "Instagram":
+      match = path.match(/^\/(reel|reels|p|tv)\/([A-Za-z0-9_-]+)\/?$/i);
+      if (match) url = `https://www.instagram.com/${match[1].toLowerCase()}/${match[2]}/`;
+      break;
+    case "YouTube": {
+      let videoId;
+      if (host === "youtu.be") videoId = path.match(/^\/([A-Za-z0-9_-]{11})\/?$/)?.[1];
+      else if (path === "/watch") videoId = u.searchParams.get("v");
+      else videoId = path.match(/^\/(?:shorts|live|embed)\/([A-Za-z0-9_-]{11})\/?$/)?.[1];
+      if (videoId && /^[A-Za-z0-9_-]{11}$/.test(videoId)) url = `https://www.youtube.com/watch?v=${videoId}`;
+      break;
+    }
+    case "Facebook":
+      if (host === "fb.watch") {
+        match = path.match(/^\/([A-Za-z0-9_-]+)\/?$/);
+        if (match) url = `https://fb.watch/${match[1]}/`;
+      } else if (path === "/watch") {
+        const id = u.searchParams.get("v");
+        if (id && /^\d+$/.test(id)) url = `https://www.facebook.com/watch/?v=${id}`;
+      } else {
+        match = path.match(/^\/(?:reel|videos)\/(\d+)\/?$/i)
+          || path.match(/^\/[A-Za-z0-9._-]+\/videos\/(\d+)\/?$/i);
+        if (match) url = `https://www.facebook.com/reel/${match[1]}/`;
+        else {
+          match = path.match(/^\/share\/(r|v)\/([A-Za-z0-9_-]+)\/?$/i);
+          if (match) url = `https://www.facebook.com/share/${match[1].toLowerCase()}/${match[2]}/`;
+        }
+      }
+      break;
+    case "TikTok":
+      if (host === "vm.tiktok.com" || host === "vt.tiktok.com") {
+        match = path.match(/^\/([A-Za-z0-9_-]+)\/?$/);
+        if (match) url = `https://${host}/${match[1]}/`;
+      } else {
+        match = path.match(/^\/@([A-Za-z0-9._-]+)\/video\/(\d+)\/?$/);
+        if (match) url = `https://www.tiktok.com/@${match[1]}/video/${match[2]}`;
+        else {
+          match = path.match(/^\/t\/([A-Za-z0-9_-]+)\/?$/);
+          if (match) url = `https://www.tiktok.com/t/${match[1]}/`;
+        }
+      }
+      break;
+    case "X":
+      match = path.match(/^\/(?:[A-Za-z0-9_]+|i)\/status\/(\d+)\/?$/i)
+        || path.match(/^\/i\/web\/status\/(\d+)\/?$/i);
+      if (match) url = `https://x.com/i/status/${match[1]}`;
+      break;
+    case "Reddit":
+      if (host === "redd.it" || host === "v.redd.it") {
+        match = path.match(/^\/([A-Za-z0-9]+)\/?$/);
+        if (match) url = `https://${host}/${match[1]}/`;
+      } else {
+        match = path.match(/^\/(?:r\/[A-Za-z0-9_]+\/)?comments\/([A-Za-z0-9]+)(?:\/[^?#]*)?\/?$/);
+        if (match) url = `https://www.reddit.com/comments/${match[1]}/`;
+      }
+      break;
+    case "Vimeo":
+      match = path.match(/^\/(\d+)\/?$/)
+        || path.match(/^\/(?:channels\/[A-Za-z0-9_-]+|groups\/[A-Za-z0-9_-]+\/videos|video|album\/\d+\/video)\/(\d+)\/?$/);
+      if (match) url = `https://vimeo.com/${match[2] || match[1]}`;
+      break;
+    case "Twitch":
+      if (host === "clips.twitch.tv") {
+        match = path.match(/^\/([A-Za-z0-9_-]+)\/?$/);
+        if (match) url = `https://clips.twitch.tv/${match[1]}`;
+      } else {
+        match = path.match(/^\/videos\/(\d+)\/?$/);
+        if (match) url = `https://www.twitch.tv/videos/${match[1]}`;
+        else {
+          match = path.match(/^\/([A-Za-z0-9_]+)\/clip\/([A-Za-z0-9_-]+)\/?$/i);
+          if (match) url = `https://www.twitch.tv/${match[1]}/clip/${match[2]}`;
+        }
+      }
+      break;
+    case "Dailymotion":
+      match = path.match(/^\/(?:video\/)?([A-Za-z0-9]+)\/?$/);
+      if (match) url = `https://www.dailymotion.com/video/${match[1]}`;
+      break;
+    case "Streamable":
+      match = path.match(/^\/([A-Za-z0-9]+)\/?$/);
+      if (match) url = `https://streamable.com/${match[1]}`;
+      break;
+  }
+  return url ? { url, platform } : null;
+}
+
+// Retained for integrations depending on the old helper.
+export function parseInstagramUrl(text) {
+  const parsed = parseVideoUrl(text);
+  return parsed?.platform === "Instagram" ? parsed.url : null;
 }
 
 export function constantTimeEqual(a, b) {
@@ -81,26 +187,24 @@ export default {
     try { update = await request.json(); } catch { return new Response("Bad JSON", { status: 400 }); }
     const message = update?.message;
     if (!message || message.chat?.type !== "private") return new Response("ok");
-    // Never run a job for somebody else's Telegram account.
     if (String(message.from?.id) !== String(env.TELEGRAM_ALLOWED_USER_ID) ||
         String(message.chat?.id) !== String(env.TELEGRAM_ALLOWED_USER_ID)) return new Response("ok");
     const chatId = message.chat.id;
     const text = message.text || message.caption || "";
     if (text.trim() === "/start" || text.trim() === "/help") {
-      await sendTelegram(env, chatId, "أرسل رابط Reel عام من Instagram وسأحفظ الفيديو في Google Drive وأعيد لك الرابط. الروابط الخاصة قد لا تعمل.");
+      await sendTelegram(env, chatId, "🎬 أرسل رابط فيديو عام من Instagram أو YouTube/Shorts أو Facebook أو TikTok أو X أو Reddit أو Vimeo أو Twitch، وسأحفظه في Google Drive. أدعم أيضاً Dailymotion وStreamable. الحد الأقصى 250MB، والروابط الخاصة أو المحمية قد لا تعمل.");
       return new Response("ok");
     }
-    const url = parseInstagramUrl(text);
-    if (!url) {
-      await sendTelegram(env, chatId, "أرسل رابط Instagram صالحاً من نوع /reel/ أو /p/ أو /tv/.");
+    const media = parseVideoUrl(text);
+    if (!media) {
+      await sendTelegram(env, chatId, "❌ الرابط غير مدعوم. أرسل رابط فيديو عام بصيغة HTTPS من Instagram أو YouTube أو Facebook أو TikTok أو X أو Reddit أو Vimeo أو Twitch (أو Dailymotion وStreamable). لا أدعم البث المباشر أو الروابط الخاصة.");
       return new Response("ok");
     }
     try {
-      const payload = await encryptDispatch({ url, chat_id: String(chatId) }, env.PIPELINE_KEY);
+      const payload = await encryptDispatch({ url: media.url, chat_id: String(chatId) }, env.PIPELINE_KEY);
       await dispatchGitHub(env, payload);
-      await sendTelegram(env, chatId, "✅ استلمت الرابط. بدأت مهمة الحفظ، وسأرسل رابط Google Drive بعد اكتمالها.");
+      await sendTelegram(env, chatId, `✅ استلمت رابط ${media.platform}. بدأت مهمة التنزيل والحفظ في Google Drive، وسأرسل الرابط عند الانتهاء.`);
     } catch (err) {
-      // Avoid exposing auth tokens or private data in logs/messages.
       console.error("Dispatch/notification failed:", err?.name || "Error");
       try { await sendTelegram(env, chatId, "تعذّر بدء المهمة. تحقق من إعدادات Cloudflare وGitHub."); } catch { /* ignore */ }
     }

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import worker, { parseInstagramUrl, constantTimeEqual } from '../worker/src/index.js';
+import worker, { parseInstagramUrl, parseVideoUrl, constantTimeEqual } from '../worker/src/index.js';
 
 test('accepts public Instagram reel and removes trackers', () => {
   assert.equal(parseInstagramUrl('see https://www.instagram.com/reel/ABC_123/?igsh=tracking'), 'https://www.instagram.com/reel/ABC_123/');
@@ -11,6 +11,72 @@ test('rejects unrelated and private/unsafe addresses', () => {
     assert.equal(parseInstagramUrl(url), null);
   }
 });
+test('accepts video links from every supported platform', () => {
+  const samples = [
+    ['https://youtu.be/dQw4w9WgXcQ?t=12', 'YouTube', 'https://www.youtube.com/watch?v=dQw4w9WgXcQ'],
+    ['https://youtube.com/shorts/dQw4w9WgXcQ', 'YouTube', 'https://www.youtube.com/watch?v=dQw4w9WgXcQ'],
+    ['https://www.facebook.com/reel/123456789/', 'Facebook', 'https://www.facebook.com/reel/123456789/'],
+    ['https://www.facebook.com/share/r/abcd12/', 'Facebook', 'https://www.facebook.com/share/r/abcd12/'],
+    ['https://www.tiktok.com/@user/video/7345678912345678901?share_id=1', 'TikTok', 'https://www.tiktok.com/@user/video/7345678912345678901'],
+    ['https://vm.tiktok.com/ZMabcd12/', 'TikTok', 'https://vm.tiktok.com/ZMabcd12/'],
+    ['https://twitter.com/user/status/12345678?s=20', 'X', 'https://x.com/i/status/12345678'],
+    ['https://www.reddit.com/r/videos/comments/abc123/title/', 'Reddit', 'https://www.reddit.com/comments/abc123/'],
+    ['https://vimeo.com/123456789', 'Vimeo', 'https://vimeo.com/123456789'],
+    ['https://clips.twitch.tv/FunnyClip123', 'Twitch', 'https://clips.twitch.tv/FunnyClip123'],
+    ['https://www.twitch.tv/videos/12345', 'Twitch', 'https://www.twitch.tv/videos/12345'],
+    ['https://www.dailymotion.com/video/x99abc1', 'Dailymotion', 'https://www.dailymotion.com/video/x99abc1'],
+    ['https://streamable.com/abc123', 'Streamable', 'https://streamable.com/abc123'],
+  ];
+  for (const [input, platform, url] of samples) {
+    assert.deepEqual(parseVideoUrl(input), {platform, url}, input);
+  }
+});
+test('rejects unsafe hosts and non-video addresses', () => {
+  for (const input of [
+    'https://youtu.be.evil.example/dQw4w9WgXcQ', 'http://www.youtube.com/watch?v=dQw4w9WgXcQ',
+    'https://youtube.com/@creator', 'https://www.youtube.com/playlist?list=abc',
+    'https://127.0.0.1/', 'https://www.instagram.com@evil.com/reel/xyz/',
+    'https://www.instagram.com:8080/reel/xyz/', 'https://x.com/user',
+    'https://www.tiktok.com/@user/video/123#fragment',
+    'https://www.reddit.com/r/videos/',
+  ]) assert.equal(parseVideoUrl(input), null, input);
+});
+
+test('YouTube Shorts webhook dispatches with encrypted normalized URL', async () => {
+  const oldFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (url, options) => {
+    calls.push({url:String(url),options});
+    return String(url).includes('github.com') ? new Response(null,{status:204}) : new Response('{"ok":true}',{status:200});
+  };
+  try {
+    const rawKey = crypto.getRandomValues(new Uint8Array(32));
+    const env = {
+      TELEGRAM_WEBHOOK_SECRET:'secret',TELEGRAM_ALLOWED_USER_ID:'2345678',
+      TELEGRAM_BOT_TOKEN:'mock',GITHUB_OWNER:'Hazem-bcs',GITHUB_REPO:'instagram-drive-telegram-bot',
+      GITHUB_TOKEN:'mock',PIPELINE_KEY:Buffer.from(rawKey).toString('base64url'),
+    };
+    const req = new Request('https://example.com/telegram',{
+      method:'POST',headers:{'X-Telegram-Bot-Api-Secret-Token':'secret'},
+      body:JSON.stringify({message:{from:{id:2345678},chat:{type:'private',id:2345678},
+        text:'https://youtube.com/shorts/dQw4w9WgXcQ?si=tracker'}}),
+    });
+    const result = await worker.fetch(req,env);
+    assert.equal(result.status,200);
+    const dispatch = calls.find(c=>c.url.includes('github.com'));
+    assert.ok(dispatch);
+    const payload = JSON.parse(dispatch.options.body).inputs.payload;
+    assert.ok(!payload.includes('youtube.com'));
+    const [nonce,ciphertext] = payload.split('.');
+    const key = await crypto.subtle.importKey('raw',rawKey,'AES-GCM',false,['decrypt']);
+    const decoded = await crypto.subtle.decrypt(
+      {name:'AES-GCM',iv:Buffer.from(nonce,'base64url')},key,Buffer.from(ciphertext,'base64url'));
+    assert.deepEqual(JSON.parse(new TextDecoder().decode(decoded)),{
+      url:'https://www.youtube.com/watch?v=dQw4w9WgXcQ',chat_id:'2345678',
+    });
+  } finally { globalThis.fetch = oldFetch; }
+});
+
 test('compares webhook secrets', () => {
   assert.equal(constantTimeEqual('a1', 'a1'), true);
   assert.equal(constantTimeEqual('a1', 'a2'), false);
