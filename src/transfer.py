@@ -133,6 +133,8 @@ def download_video(url: str, directory: str) -> tuple[Path, str]:
 
     options = {
         "ffmpeg_location": get_ffmpeg_exe(),
+        # Required by current yt-dlp YouTube support (yt-dlp-ejs + Node 22).
+        "js_runtimes": {"node": {}},
         "outtmpl": str(Path(directory) / "video_%(id)s.%(ext)s"),
         "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
         "merge_output_format": "mp4",
