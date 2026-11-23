@@ -2,6 +2,8 @@
 
 بوت تيليغرام يحفظ فيديوهات عامة من Instagram وYouTube (بما فيها Shorts) وFacebook وTikTok وX وReddit وVimeo وTwitch وDailymotion وStreamable في Google Drive، ويعيد رابط الفيديو تلقائياً، **بدون VPS أو حاسوب يعمل دائماً**.
 
+**تنبيه YouTube:** يستطيع البوت استقبال رابط YouTube/Shorts والتحقق منه، لكن قد تطلب YouTube التحقق من المستخدم أو تمنع تنزيل الفيديو من عناوين خوادم GitHub Actions. حتى بعد تثبيت أدوات JavaScript الرسمية لا توجد ضمانة بأن YouTube يسمح بالتنزيل من هذه البيئة. عند الرفض، يعرض البوت سبباً واضحاً دون طباعة أسرار أو روابط الطلبات في السجلات.
+
 **الهدف:** مشاركة رابط الفيديو المحفوظ في Google Drive داخل محادثة ChatGPT لتحليل محتواه، بدلاً من الاعتماد على وصول ChatGPT لمواقع الفيديو الأصلية. يمكن لـChatGPT الوصول للملفات عبر Google Drive المتصل إذا كانت الأذونات والأدوات متاحة، واستخراج لقطات منها؛ **مجرد رابط معاينة عام لا يضمن تشغيل الفيديو مباشرة في كل محادثة**. عند تعذّر الوصول، ارفع الملف في المحادثة أو استخدم رابط Drive قابلاً للتنزيل.
 
 **Infrastructure:** Telegram Bot → Cloudflare Worker (webhook) → encrypted GitHub Actions `workflow_dispatch` → Python / yt-dlp → Google Drive → Telegram.

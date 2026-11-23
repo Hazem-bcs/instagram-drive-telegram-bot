@@ -222,8 +222,23 @@ def main() -> int:
         print(f"Transfer failed ({type(exc).__name__}, category={safe_error_category(exc)}); sensitive details omitted.", file=sys.stderr)
         if chat_id and os.getenv("TELEGRAM_BOT_TOKEN"):
             try:
-                telegram_message(os.environ["TELEGRAM_BOT_TOKEN"], chat_id,
-                                 "❌ تعذّر تنزيل الفيديو أو رفعه. قد يكون الرابط خاصاً، أو لا تدعم المنصة التنزيل من خوادم GitHub، أو الفيديو كبيراً، أو توجد مشكلة في Google Drive.")
+                category = safe_error_category(exc)
+                if category == "upstream_requires_sign_in_or_bot_verification":
+                    user_message = (
+                        "❌ منصة الفيديو رفضت التنزيل من خوادم GitHub، وطلبت تسجيل الدخول أو التحقق من أنك لست روبوتاً. "
+                        "هذا ليس خطأ في Google Drive أو رابطك. "
+                        "لا يمكنني ضمان تنزيل الفيديو تلقائياً من هذه المنصة؛ إذا كان لديك نسخة من الفيديو، ارفعها إلى Google Drive لمناقشتها مع ChatGPT."
+                    )
+                elif category == "upstream_rate_limited":
+                    user_message = "❌ منصة الفيديو ترفض الطلبات مؤقتاً بسبب كثرة المحاولات (429). جرّب في وقت لاحق."
+                elif category == "upstream_video_unavailable":
+                    user_message = "❌ الفيديو غير متاح لأداة التنزيل. تأكد من أن الفيديو عام ولم يُحذف أو يُقيّد."
+                else:
+                    user_message = (
+                        "❌ تعذّر تنزيل الفيديو أو رفعه. قد يكون الرابط خاصاً أو لا تسمح المنصة بتنزيله من خوادم GitHub، "
+                        "أو الفيديو كبيراً، أو توجد مشكلة في Google Drive."
+                    )
+                telegram_message(os.environ["TELEGRAM_BOT_TOKEN"], chat_id, user_message)
             except Exception:
                 print("Could not deliver error notification.", file=sys.stderr)
         return 1
