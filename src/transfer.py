@@ -179,6 +179,24 @@ def upload_video(service, path: Path, filename: str, folder_id: str) -> dict:
     return result
 
 
+def safe_error_category(exc: Exception) -> str:
+    """Categorize upstream failures without printing URLs, secrets, or private data."""
+    msg = str(exc).lower()
+    if any(t in msg for t in ("confirm you", "not a bot", "login required", "sign in to", "verification required")):
+        return "upstream_requires_sign_in_or_bot_verification"
+    if any(t in msg for t in ("http error 429", "too many requests", "rate limit")):
+        return "upstream_rate_limited"
+    if any(t in msg for t in ("http error 403", "forbidden", "access denied")):
+        return "upstream_denied_http_403"
+    if any(t in msg for t in ("video is unavailable", "video unavailable", "private video")):
+        return "upstream_video_unavailable"
+    if any(t in msg for t in ("requested format is not available", "no video formats found", "no formats found")):
+        return "upstream_formats_unavailable"
+    if any(t in msg for t in ("timed out", "timeout", "connection error", "remote end closed")):
+        return "network_connection_error"
+    return "other_download_or_upload_error"
+
+
 def main() -> int:
     chat_id = None
     try:
@@ -201,7 +219,7 @@ def main() -> int:
         return 0
     except Exception as exc:
         # Public GitHub Actions logs must not include the input URL or secrets.
-        print(f"Transfer failed ({type(exc).__name__}); details intentionally omitted.", file=sys.stderr)
+        print(f"Transfer failed ({type(exc).__name__}, category={safe_error_category(exc)}); sensitive details omitted.", file=sys.stderr)
         if chat_id and os.getenv("TELEGRAM_BOT_TOKEN"):
             try:
                 telegram_message(os.environ["TELEGRAM_BOT_TOKEN"], chat_id,

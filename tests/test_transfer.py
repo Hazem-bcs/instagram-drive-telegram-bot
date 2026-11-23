@@ -7,7 +7,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
-from transfer import decode_job, validate_instagram_url, validate_video_url, ensure_folder, search_existing
+from transfer import decode_job, validate_instagram_url, validate_video_url, ensure_folder, search_existing, safe_error_category
 from media_urls import parse_video_url
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
@@ -105,6 +105,21 @@ class SupportedVideoUrlTests(unittest.TestCase):
             with self.subTest(url=url):
                 with self.assertRaises(ValueError):
                     parse_video_url(url)
+
+
+class ErrorDiagnosticTests(unittest.TestCase):
+    def test_safe_error_categories(self):
+        self.assertEqual(safe_error_category(ValueError("Sign in to confirm you're not a bot.")),
+                         "upstream_requires_sign_in_or_bot_verification")
+        self.assertEqual(safe_error_category(ValueError("HTTP Error 403: Forbidden")),
+                         "upstream_denied_http_403")
+        self.assertEqual(safe_error_category(ValueError("Video is unavailable")),
+                         "upstream_video_unavailable")
+        self.assertEqual(safe_error_category(ValueError("http error 429")),
+                         "upstream_rate_limited")
+        # Never leak raw URLs in the category.
+        self.assertEqual(safe_error_category(ValueError("https://private.example/data?token=secret")),
+                         "other_download_or_upload_error")
 
 
 class DriveApiCallTests(unittest.TestCase):
