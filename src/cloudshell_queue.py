@@ -5,18 +5,23 @@ import json
 import os
 from pathlib import Path
 import tempfile
-from urllib.request import Request, urlopen
-from urllib.error import HTTPError
+import requests
 from media_urls import parse_video_url
 from transfer import drive_service, search_existing, upload_video, ensure_public, safe_error_category, MAX_FILE_BYTES
 
 
 def call(config, path, data=None):
-    req = Request("https://instagram-drive-telegram-bot.zad-market.workers.dev/queue/" + path,
-                  headers={"Authorization": "Bearer " + config["queue_access_key"], "Content-Type":"application/json"},
-                  data=None if data is None else json.dumps(data).encode())
-    with urlopen(req, timeout=30) as response:
-        return json.load(response)
+    response = requests.request(
+        "GET" if data is None else "POST",
+        "https://instagram-drive-telegram-bot.zad-market.workers.dev/queue/" + path,
+        headers={"Authorization": "Bearer " + config["queue_access_key"]},
+        json=data, timeout=30, allow_redirects=False,
+    )
+    response.raise_for_status()
+    if response.status_code != 200:
+        raise ValueError("Unexpected queue HTTP status")
+    return response.json()
+
 
 
 def process(config, url, service):
@@ -81,8 +86,8 @@ def main():
             for item in pending:
                 try:
                     job=call(config,"claim",item)
-                except HTTPError as exc:
-                    if exc.code==409:
+                except requests.HTTPError as exc:
+                    if exc.response.status_code==409:
                         continue
                     raise
                 lease={"video_id":job["video_id"],"lease":job["lease"]}
