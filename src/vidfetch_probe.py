@@ -10,12 +10,15 @@ def request(path, data=None):
         with urlopen(req,timeout=30) as r:
             return r.status,json.load(r)
     except HTTPError as e:
+        body=e.read(8192).decode(errors="replace").lower()
+        print("HTTP_ERROR",e.code,"content_type",e.headers.get("Content-Type"),"server",e.headers.get("Server"),flush=True)
+        for label,needle in [("browser_security","error code: 1010"),("challenge","challenge-platform"),("blocked","access denied"),("invalid_key","invalid_api_key"),("forbidden","forbidden"),("unauthorized","unauthorized"),("quota","quota_exceeded"),("region","region"),("cloudflare","cloudflare")]:
+            if needle in body:
+                print("ERROR_CATEGORY",label,flush=True)
         return e.code,{}
 
 for path, data in [
     ("usage", None),
-    ("info", {"url":"https://www.youtube.com/watch?v=YE7VzlLtp-4"}),
-    ("info", {"url":"https://www.youtube.com/watch?v=nYYitW53CXI"}),
 ]:
     try:
         status, result = request(path,data)
