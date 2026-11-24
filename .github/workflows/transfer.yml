@@ -35,7 +35,7 @@ jobs:
           print("SETTINGS_CHANGE_OK:", changed.get("ok",False))
           if not changed.get("ok"):
               raise SystemExit(1)
-          for bot in ["@TopSaverBot", "@quicksbot"]:
+          for bot in ["@YUTubDownbot", "@VideoYoutubeDL2Bot", "@YouTubeDLx_bot", "@TTpapaBOT", "@ytdlbart_bot"]:
               result = call("sendMessage", {"chat_id":bot, "text":"/start"})
               description = result.get("description","").lower()
               code = "ACCEPTED" if result.get("ok") else "BOT_TO_BOT_DISABLED" if "bot" in description and ("disabled" in description or "can't" in description or "cannot" in description or "forbidden" in description) else "REJECTED_HTTP_" + str(result.get("error_code","UNKNOWN"))
