@@ -1,3 +1,4 @@
+import { enqueueYoutube, queueRequest } from "./youtube_queue.js";
 /** Telegram webhook -> encrypted GitHub workflow_dispatch. Runs on Cloudflare Workers. */
 const TELEGRAM_API = "https://api.telegram.org";
 const URL_RE = /https?:\/\/[^\s<>"']+/i;
@@ -179,6 +180,7 @@ export default {
   async fetch(request, env) {
     const path = new URL(request.url).pathname;
     if (request.method === "GET" && path === "/health") return new Response("ok", { status: 200 });
+    if (path.startsWith("/queue/")) return queueRequest(request, env, constantTimeEqual, sendTelegram);
     if (request.method !== "POST" || path !== "/telegram") return new Response("Not found", { status: 404 });
     if (!env.TELEGRAM_WEBHOOK_SECRET || !constantTimeEqual(request.headers.get("X-Telegram-Bot-Api-Secret-Token"), env.TELEGRAM_WEBHOOK_SECRET)) {
       return new Response("Unauthorized", { status: 401 });
@@ -226,6 +228,14 @@ export default {
       return new Response("ok");
     }
     try {
+      if (media.platform === "YouTube" && env.YOUTUBE_QUEUE_ENABLED === "true") {
+        const job = await enqueueYoutube(env, media.url);
+        const reply = job?.drive_id
+          ? "✅ الفيديو محفوظ مسبقاً: https://drive.google.com/file/d/" + job.drive_id + "/view"
+          : "✅ أضيف فيديو YouTube إلى قائمة الانتظار. شغّل أمر معالجة القائمة في Google Cloud Shell لحفظه في Google Drive.";
+        await sendTelegram(env, chatId, reply);
+        return new Response("ok");
+      }
       const payload = await encryptDispatch({ url: media.url, chat_id: String(chatId) }, env.PIPELINE_KEY);
       await dispatchGitHub(env, payload);
       await sendTelegram(env, chatId, `✅ استلمت رابط ${media.platform}. بدأت مهمة التنزيل والحفظ في Google Drive، وسأرسل الرابط عند الانتهاء.`);
