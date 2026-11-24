@@ -175,10 +175,49 @@ async function dispatchGitHub(env, payload) {
   if (res.status !== 204) throw new Error(`GitHub dispatch status ${res.status}`);
 }
 
+
+function jsonResponse(data, status = 200) {
+  return new Response(JSON.stringify(data), {status, headers: {"Content-Type": "application/json", "Cache-Control": "no-store"}});
+}
+
+async function youtubeQueue(request, env, path) {
+  if (!env.YOUTUBE_QUEUE || !env.YOUTUBE_QUEUE_TOKEN ||
+      !constantTimeEqual(request.headers.get("Authorization"), "Bearer " + env.YOUTUBE_QUEUE_TOKEN))
+    return jsonResponse({error:"unauthorized"}, 401);
+  if (request.method !== "POST") return jsonResponse({error:"method"}, 405);
+  const db = env.YOUTUBE_QUEUE;
+  if (path === "/youtube/claim") {
+    const token = crypto.randomUUID();
+    const job = await db.prepare("UPDATE youtube_jobs SET state='leased', lease_token=?, lease_until=unixepoch()+3600 WHERE id=(SELECT id FROM youtube_jobs WHERE state='pending' OR (state='leased' AND lease_until<unixepoch()) ORDER BY created_at,id LIMIT 1) RETURNING id,url,lease_token")
+      .bind(token).first();
+    return jsonResponse({job:job || null});
+  }
+  if (path !== "/youtube/finish") return jsonResponse({error:"not_found"},404);
+  let body;
+  try { body = await request.json(); } catch { return jsonResponse({error:"bad_json"},400); }
+  if (!body || !/^\d{1,20}$/.test(body.id || "") || !/^[0-9a-f-]{36}$/.test(body.lease_token || ""))
+    return jsonResponse({error:"invalid_job"},400);
+  const fileId = typeof body.file_id === "string" && /^[A-Za-z0-9_-]{10,100}$/.test(body.file_id) ? body.file_id : null;
+  if (!fileId && body.failed !== true) return jsonResponse({error:"invalid_result"},400);
+  const job = await db.prepare("SELECT id FROM youtube_jobs WHERE id=? AND state='leased' AND lease_token=? AND lease_until>=unixepoch()")
+    .bind(body.id, body.lease_token).first();
+  if (!job) return jsonResponse({error:"stale_lease"},409);
+  await sendTelegram(env, env.TELEGRAM_ALLOWED_USER_ID, fileId
+    ? "✅ تم حفظ فيديو YouTube في Google Drive.\n🎬 https://drive.google.com/file/d/" + fileId + "/view\n💬 يمكنك إرسال الرابط إلى ChatGPT لمناقشة محتواه."
+    : "❌ تعذّر معالجة فيديو YouTube في Cloud Shell. تحقق من نتيجة الأمر؛ يمكنك إعادة إرسال الرابط للمحاولة لاحقاً.");
+  await db.prepare("UPDATE youtube_jobs SET state=?, file_id=?, url='', lease_token=NULL, lease_until=0 WHERE id=? AND lease_token=?")
+    .bind(fileId ? "done" : "failed",fileId,body.id,body.lease_token).run();
+  return jsonResponse({ok:true});
+}
+
 export default {
   async fetch(request, env) {
     const path = new URL(request.url).pathname;
     if (request.method === "GET" && path === "/health") return new Response("ok", { status: 200 });
+    if (path.startsWith("/youtube/")) {
+      try { return await youtubeQueue(request, env, path); }
+      catch { return jsonResponse({error:"queue_unavailable"},503); }
+    }
     if (request.method !== "POST" || path !== "/telegram") return new Response("Not found", { status: 404 });
     if (!env.TELEGRAM_WEBHOOK_SECRET || !constantTimeEqual(request.headers.get("X-Telegram-Bot-Api-Secret-Token"), env.TELEGRAM_WEBHOOK_SECRET)) {
       return new Response("Unauthorized", { status: 401 });
@@ -226,6 +265,13 @@ export default {
       return new Response("ok");
     }
     try {
+      if (media.platform === "YouTube" && env.YOUTUBE_QUEUE && env.YOUTUBE_QUEUE_TOKEN) {
+        const id = String(update.update_id ?? message.message_id ?? "");
+        if (!/^\d{1,20}$/.test(id)) throw new Error("Missing update ID");
+        await env.YOUTUBE_QUEUE.prepare("INSERT OR IGNORE INTO youtube_jobs(id,url) VALUES(?,?)").bind(id,media.url).run();
+        await sendTelegram(env, chatId, "✅ أضفت فيديو YouTube إلى قائمة الانتظار. عند تشغيل أمر المعالجة في Cloud Shell سأرسل لك رابط Google Drive.");
+        return new Response("ok");
+      }
       const payload = await encryptDispatch({ url: media.url, chat_id: String(chatId) }, env.PIPELINE_KEY);
       await dispatchGitHub(env, payload);
       await sendTelegram(env, chatId, `✅ استلمت رابط ${media.platform}. بدأت مهمة التنزيل والحفظ في Google Drive، وسأرسل الرابط عند الانتهاء.`);

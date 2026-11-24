@@ -127,7 +127,7 @@ def get_first_video_info(info: dict) -> dict:
     return info
 
 
-def download_video(url: str, directory: str) -> tuple[Path, str]:
+def download_video(url: str, directory: str, format_selector: str | None = None) -> tuple[Path, str]:
     import yt_dlp
     from imageio_ffmpeg import get_ffmpeg_exe
 
@@ -136,7 +136,7 @@ def download_video(url: str, directory: str) -> tuple[Path, str]:
         # Required by current yt-dlp YouTube support (yt-dlp-ejs + Node 22).
         "js_runtimes": {"node": {}},
         "outtmpl": str(Path(directory) / "video_%(id)s.%(ext)s"),
-        "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+        "format": format_selector or "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
         "merge_output_format": "mp4",
         "noplaylist": True,
         "playlist_items": "1",
