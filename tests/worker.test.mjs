@@ -133,3 +133,36 @@ test('authorized Telegram update dispatches encrypted payload, not plaintext lin
     globalThis.fetch = oldFetch;
   }
 });
+
+test('group bridge check only accepts the owner, named group and explicit command', async () => {
+  const originalFetch = globalThis.fetch;
+  const requests = [];
+  globalThis.fetch = async (url, options) => {
+    requests.push({url: String(url), body: JSON.parse(options.body)});
+    return new Response('{"ok":true}', {status:200});
+  };
+  try {
+    const env = { TELEGRAM_WEBHOOK_SECRET:"mock", TELEGRAM_ALLOWED_USER_ID:"123",
+      TELEGRAM_BOT_TOKEN:"mock" };
+    const check = (message) => worker.fetch(new Request("https://example.com/telegram",{
+      method:"POST", headers:{"X-Telegram-Bot-Api-Secret-Token":"mock"},
+      body:JSON.stringify({message})
+    }),env);
+    const message = {chat:{id:-1234,type:"supergroup",title:"Video Bridge"},
+      from:{id:123,is_bot:false}, text:"/bridgecheck@hazemdownloaderbot"};
+    await check({...message, from:{id:456,is_bot:false}});
+    await check({...message, chat:{...message.chat,title:"Other"}});
+    await check({...message, text:"https://youtube.com/watch?v=nYYitW53CXI"});
+    assert.equal(requests.length,0);
+    await check(message);
+    assert.equal(requests.length,2);
+    assert.equal(requests[0].body.text,"/help@download_it_bot");
+    assert.equal(requests[0].body.chat_id,-1234);
+    assert.equal(String(requests[1].body.chat_id),"123");
+    await check({...message,from:{id:789,is_bot:true,username:"download_it_bot"},
+      text:"help reply",reply_to_message:{from:{is_bot:true,username:"hazemdownloaderbot"},text:"/help@download_it_bot"}});
+    assert.equal(requests.length,3);
+    assert.equal(String(requests[2].body.chat_id),"123");
+    assert.ok(requests.every(r=>r.url.includes("api.telegram.org")));
+  } finally { globalThis.fetch = originalFetch; }
+});

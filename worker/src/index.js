@@ -186,7 +186,32 @@ export default {
     let update;
     try { update = await request.json(); } catch { return new Response("Bad JSON", { status: 400 }); }
     const message = update?.message;
-    if (!message || message.chat?.type !== "private") return new Response("ok");
+    if (!message) return new Response("ok");
+    // Owner-initiated compatibility check only. Never dispatch group uploads.
+    if (["group", "supergroup"].includes(message.chat?.type)) {
+      if (message.chat?.title !== "Video Bridge") return new Response("ok");
+      const sender = message.from;
+      const reply = message.reply_to_message;
+      if (String(sender?.id) === String(env.TELEGRAM_ALLOWED_USER_ID) &&
+          !sender?.is_bot &&
+          /^\/bridgecheck@hazemdownloaderbot$/i.test((message.text || "").trim())) {
+        try {
+          await sendTelegram(env, message.chat.id, "/help@download_it_bot");
+          await sendTelegram(env, env.TELEGRAM_ALLOWED_USER_ID,
+            "✅ وصلت إلى مجموعة Video Bridge وأرسلت أمر المساعدة الرسمي إلى Download IT. إذا ظهر رد في المجموعة، فالتواصل ممكن.");
+        } catch {
+          try { await sendTelegram(env, env.TELEGRAM_ALLOWED_USER_ID,
+            "تعذّر إرسال اختبار التواصل إلى المجموعة."); } catch { /* ignore */ }
+        }
+      } else if (sender?.is_bot && sender.username?.toLowerCase() === "download_it_bot" &&
+          reply?.from?.is_bot && reply.from.username?.toLowerCase() === "hazemdownloaderbot" &&
+          reply?.text === "/help@download_it_bot") {
+        try { await sendTelegram(env, env.TELEGRAM_ALLOWED_USER_ID,
+          "✅ استلمت رداً مباشراً من Download IT داخل Video Bridge. نجح اختبار التواصل بين البوتين."); } catch { /* ignore */ }
+      }
+      return new Response("ok");
+    }
+    if (message.chat?.type !== "private") return new Response("ok");
     if (String(message.from?.id) !== String(env.TELEGRAM_ALLOWED_USER_ID) ||
         String(message.chat?.id) !== String(env.TELEGRAM_ALLOWED_USER_ID)) return new Response("ok");
     const chatId = message.chat.id;
