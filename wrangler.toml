@@ -6,4 +6,10 @@ workers_dev = true
 [vars]
 GITHUB_OWNER = "Hazem-bcs"
 GITHUB_REPO = "instagram-drive-telegram-bot"
+YOUTUBE_QUEUE_ENABLED = "true"
 # All credentials belong in Cloudflare Worker Secrets, never here.
+
+[[d1_databases]]
+binding = "YOUTUBE_QUEUE"
+database_name = "video-archive-youtube-queue"
+database_id = "f873aa00-6f68-43cd-953e-58596cf17e9a"
