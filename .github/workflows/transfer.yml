@@ -1,42 +1,49 @@
-name: Transfer Instagram video to Google Drive
-
+name: YouTube isolated compatibility test
 on:
   workflow_dispatch:
     inputs:
       payload:
-        description: "AES-GCM encrypted job (contains URL and Telegram chat ID)"
         required: true
         type: string
-
-permissions:
-  contents: read
-
+permissions: {}
 jobs:
-  transfer:
+  probe:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 5
     steps:
-      - name: Checkout source
-        uses: actions/checkout@v4
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-          cache: 'pip'
-      - name: Set up Node.js for YouTube JavaScript challenges
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Install Python packages and bundled FFmpeg
+      - name: Install test dependencies
+        run: python -m pip install -q 'yt-dlp[default]' 'bgutil-ytdlp-pot-provider==2.0.2'
+      - name: Start isolated token provider
         run: |
-          python -m pip install --disable-pip-version-check -r requirements.txt
-          python -c 'from imageio_ffmpeg import get_ffmpeg_exe; import subprocess; subprocess.run([get_ffmpeg_exe(), "-version"], check=True, stdout=subprocess.DEVNULL)'
-      - name: Download and upload privately
-        env:
-          ENCRYPTED_PAYLOAD: ${{ inputs.payload }}
-          PIPELINE_KEY: ${{ secrets.PIPELINE_KEY }}
-          GOOGLE_OAUTH_JSON: ${{ secrets.GOOGLE_OAUTH_JSON }}
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          DRIVE_FOLDER_NAME: Instagram Videos
-          PUBLIC_FOLDER: 'true'
-        run: python src/transfer.py
+          docker run --name bgutil-provider -d --init -p 127.0.0.1:4416:4416 brainicism/bgutil-ytdlp-pot-provider:2.0.2
+          for i in $(seq 1 20); do curl -fsS http://127.0.0.1:4416/ping >/dev/null && exit 0; sleep 1; done
+          exit 1
+      - name: Probe requested single public video
+        run: |
+          python - <<'PY'
+          import yt_dlp
+          class Logger:
+              def debug(self, msg):
+                  if 'Generating a' in msg and 'PO Token' in msg:
+                      print('Token requested by extractor', flush=True)
+              def warning(self, msg): pass
+              def error(self, msg): pass
+          options = {'js_runtimes':{'node':{}}, 'extractor_args': {'youtube': {'player_client':['mweb']}}, 'noplaylist':True, 'quiet':True,'logger':Logger(), 'socket_timeout':15, 'retries':0}
+          try:
+              with yt_dlp.YoutubeDL(options) as y:
+                  item=y.extract_info('https://www.youtube.com/watch?v=nYYitW53CXI',download=False)
+              print('PUBLIC_VIDEO_METADATA_OK', 'duration=',item.get('duration'), 'formats=',len(item.get('formats',[])),flush=True)
+          except Exception as exc:
+              s=str(exc).lower()
+              print('PROBE_FAILED:', 'SIGN_IN_REQUIRED' if any(k in s for k in ['sign in','not a bot','login required']) else 'HTTP_403' if '403' in s else 'NO_FORMATS' if 'format' in s else type(exc).__name__,flush=True)
+              raise SystemExit(1)
+          PY
+      - name: Cleanup
+        if: always()
+        run: docker rm -f bgutil-provider || true
