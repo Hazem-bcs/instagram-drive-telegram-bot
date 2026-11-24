@@ -34,8 +34,14 @@ jobs:
           enabled = r["result"].get("can_communicate_with_bots", False)
           print("BOT_TO_BOT_ENABLED:", enabled)
           if not enabled:
-              print("BOTFATHER_SETTING_REQUIRED")
-              raise SystemExit(0)
+              changed = call("setMySettings", {"can_communicate_with_bots": True})
+              print("SETTINGS_CHANGE_OK:", changed.get("ok",False))
+              checked = call("getMe")
+              enabled = checked.get("result",{}).get("can_communicate_with_bots",False)
+              print("VERIFIED_ENABLED:", enabled)
+              if not enabled:
+                  print("BOTFATHER_SETTING_REQUIRED")
+                  raise SystemExit(0)
           for bot in ["@TopSaverBot", "@quicksbot"]:
               result = call("sendMessage", {"chat_id":bot, "text":"/start"})
               description = result.get("description","").lower()
