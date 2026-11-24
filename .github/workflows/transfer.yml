@@ -1,42 +1,44 @@
-name: Transfer Instagram video to Google Drive
-
+name: Telegram communication compatibility check
 on:
   workflow_dispatch:
     inputs:
       payload:
-        description: "AES-GCM encrypted job (contains URL and Telegram chat ID)"
         required: true
         type: string
-
-permissions:
-  contents: read
-
+permissions: {}
 jobs:
-  transfer:
+  check:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 3
     steps:
-      - name: Checkout source
-        uses: actions/checkout@v4
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-          cache: 'pip'
-      - name: Set up Node.js for YouTube JavaScript challenges
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-      - name: Install Python packages and bundled FFmpeg
-        run: |
-          python -m pip install --disable-pip-version-check -r requirements.txt
-          python -c 'from imageio_ffmpeg import get_ffmpeg_exe; import subprocess; subprocess.run([get_ffmpeg_exe(), "-version"], check=True, stdout=subprocess.DEVNULL)'
-      - name: Download and upload privately
+      - name: Check bot communication settings using official Telegram API
         env:
-          ENCRYPTED_PAYLOAD: ${{ inputs.payload }}
-          PIPELINE_KEY: ${{ secrets.PIPELINE_KEY }}
-          GOOGLE_OAUTH_JSON: ${{ secrets.GOOGLE_OAUTH_JSON }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          DRIVE_FOLDER_NAME: Instagram Videos
-          PUBLIC_FOLDER: 'true'
-        run: python src/transfer.py
+        run: |
+          python3 - <<'PY'
+          import json, os, urllib.request, urllib.error
+          def call(method, data=None):
+              url = "https://api.telegram.org/bot" + os.environ["TELEGRAM_BOT_TOKEN"] + "/" + method
+              try:
+                  req = urllib.request.Request(url, data=json.dumps(data).encode() if data is not None else None, headers={"Content-Type":"application/json"})
+                  with urllib.request.urlopen(req, timeout=15) as r:
+                      return json.load(r)
+              except urllib.error.HTTPError as e:
+                  return json.load(e)
+              except Exception:
+                  return {"ok":False,"description":"transport failure"}
+          r = call("getMe")
+          if not r.get("ok"):
+              print("BOT_SETTINGS_READ_FAILED")
+              raise SystemExit(1)
+          enabled = r["result"].get("can_communicate_with_bots", False)
+          print("BOT_TO_BOT_ENABLED:", enabled)
+          if not enabled:
+              print("BOTFATHER_SETTING_REQUIRED")
+              raise SystemExit(0)
+          for bot in ["@TopSaverBot", "@quicksbot"]:
+              result = call("sendMessage", {"chat_id":bot, "text":"/start"})
+              description = result.get("description","").lower()
+              code = "ACCEPTED" if result.get("ok") else "BOT_TO_BOT_DISABLED" if "bot" in description and ("disabled" in description or "can't" in description or "cannot" in description or "forbidden" in description) else "REJECTED_HTTP_" + str(result.get("error_code","UNKNOWN"))
+              print(bot,code)
+          PY
